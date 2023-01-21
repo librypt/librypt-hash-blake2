@@ -51,6 +51,6 @@ mod tests {
     fn test_blake2b() {
         let hash = Blake2b::hash(b"Hello, world!");
 
-        assert_eq!(hash.encode_hex::<String>(), "ede5c0b10f2ec4979c69b52f61e42ff5b413519ce09be0f14d098dcfe5f6f98d7d46337812f87327ad7108fbaa955f009afa495ca8c05c33eb050002ac9b99bc");
+        assert_eq!(hash.encode_hex::<String>(), "a2764d133a16816b5847a737a786f2ece4c148095c5faa73e24b4cc5d666c3e45ec271504e14dc6127ddfce4e144fb23b91a6f7b04b53d695502290722953b0f");
     }
 }
