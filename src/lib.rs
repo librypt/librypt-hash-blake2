@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![cfg_attr(not(test), no_std)]
+
 use librypt_hash::{Hash, HashFn};
 
 pub struct Blake2b {
@@ -32,6 +35,17 @@ impl Blake2b {
         [10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0],
     ];
 
+    pub const MIX_INDICIES: [[usize; 4]; 8] = [
+        [0, 4, 8, 12],
+        [1, 5, 9, 13],
+        [2, 6, 10, 14],
+        [3, 7, 11, 15],
+        [0, 5, 10, 15],
+        [1, 6, 11, 12],
+        [2, 7, 8, 13],
+        [3, 4, 9, 14],
+    ];
+
     pub fn with_secret<const OUTPUT_SIZE: usize>(secret: &[u8]) -> Self {
         let key_length = secret.len().min(64);
 
@@ -55,6 +69,20 @@ impl Blake2b {
         hasher
     }
 
+    fn mix(a: &mut u64, b: &mut u64, c: &mut u64, d: &mut u64, x: u64, y: u64) {
+        *a = a.wrapping_add(b.wrapping_add(x));
+        *d = (*d ^ *a).rotate_right(32);
+
+        *c = c.wrapping_add(*d);
+        *b = (*b ^ *c).rotate_right(24);
+
+        *a = a.wrapping_add(b.wrapping_add(y));
+        *d = (*d ^ *a).rotate_right(16);
+
+        *c = c.wrapping_add(*d);
+        *b = (*b ^ *c).rotate_right(63);
+    }
+
     fn compute(&mut self, last: bool) {
         let mut state = [0u64; 16];
 
@@ -75,24 +103,23 @@ impl Blake2b {
         for i in 0..12 {
             let s = Self::SIGMA[i % 10];
 
-            for i in 0..2 {
-                for j in 0..4 {
-                    state[j] = state[j].wrapping_add(
-                        state[j + 4].wrapping_add(words[s[(i * 8) + (j * 2)] as usize]),
-                    );
-                    state[j + 12] = (state[j + 12] ^ state[j]).rotate_right(32);
+            for j in 0..8 {
+                let indicies = Self::MIX_INDICIES[j];
 
-                    state[j + 8] = state[j + 8].wrapping_add(state[j + 12]);
-                    state[j + 4] = (state[j + 4] ^ state[j + 8]).rotate_right(24);
+                let mut a = state[indicies[0]];
+                let mut b = state[indicies[1]];
+                let mut c = state[indicies[2]];
+                let mut d = state[indicies[3]];
 
-                    state[j] = state[j].wrapping_add(
-                        state[j + 4].wrapping_add(words[s[(i * 8) + (j * 2) + 1] as usize]),
-                    );
-                    state[j + 12] = (state[j + 12] ^ state[j]).rotate_right(16);
+                let x = words[s[j * 2] as usize];
+                let y = words[s[j * 2 + 1] as usize];
 
-                    state[j + 8] = state[j + 8].wrapping_add(state[j + 12]);
-                    state[j + 4] = (state[j + 4] ^ state[j + 8]).rotate_right(63);
-                }
+                Self::mix(&mut a, &mut b, &mut c, &mut d, x, y);
+
+                state[indicies[0]] = a;
+                state[indicies[1]] = b;
+                state[indicies[2]] = c;
+                state[indicies[3]] = d;
             }
         }
 
@@ -199,5 +226,16 @@ mod tests {
         let hash: [u8; 64] = Blake2b::hash(b"Hello, world!");
 
         assert_eq!(hash.encode_hex::<String>(), "a2764d133a16816b5847a737a786f2ece4c148095c5faa73e24b4cc5d666c3e45ec271504e14dc6127ddfce4e144fb23b91a6f7b04b53d695502290722953b0f");
+    }
+
+    #[test]
+    fn test_blake2b_keyed() {
+        let mut hasher = Blake2b::with_secret::<64>(b"test");
+
+        <_ as HashFn<128, 64>>::update(&mut hasher, b"Hello, world!");
+
+        let hash: [u8; 64] = hasher.finalize();
+
+        assert_eq!(hash.encode_hex::<String>(), "a09b19b591d8792ad900f6ae7cf0a2307713190b9d17a40845712ac53104ad2486fa101009a4948d2516821e1e4cacb681730548cc4e6622b16efaf0a4253706");
     }
 }
